@@ -4,7 +4,6 @@ from pytoniq_core import begin_cell
 
 
 def get_comment_message(destination_address: str, amount: int, comment: str) -> dict:
-
     data = {
         'address': destination_address,
         'amount': str(amount),

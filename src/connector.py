@@ -1,8 +1,8 @@
 from pytonconnect import TonConnect
 
-import config
 from tc_storage import TcStorage
+from src.loader import MANIFEST_URL
 
 
 def get_connector(chat_id: int):
-    return TonConnect(config.MANIFEST_URL, storage=TcStorage(chat_id))
+    return TonConnect(MANIFEST_URL, storage=TcStorage(chat_id))

@@ -1,29 +1,23 @@
 import sys
 import logging
 import asyncio
-import time
-from io import BytesIO
-import qrcode
 
-import pytonconnect.exceptions
-from pytoniq_core import Address
+from aiogram.client.default import DefaultBotProperties
 from pytonconnect import TonConnect
-
-import config
-from messages import get_comment_message
 from connector import get_connector
 
-from aiogram import Bot, Dispatcher, F
+from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
-from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, BufferedInputFile
+from aiogram.filters import CommandStart
+from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-
-logger = logging.getLogger(__file__)
+from src.handlers.transactions import send_transaction
+from src.handlers.wallet import disconnect_wallet, connect_wallet
+from src.loader import TOKEN
 
 dp = Dispatcher()
-bot = Bot(config.TOKEN, parse_mode=ParseMode.HTML)
+bot = Bot(TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 
 
 @dp.message(CommandStart())
@@ -44,86 +38,6 @@ async def command_start_handler(message: Message):
             mk_b.button(text=wallet['name'], callback_data=f'connect:{wallet["name"]}')
         mk_b.adjust(1, )
         await message.answer(text='Choose wallet to connect', reply_markup=mk_b.as_markup())
-
-
-@dp.message(Command('transaction'))
-async def send_transaction(message: Message):
-    connector = get_connector(message.chat.id)
-    connected = await connector.restore_connection()
-    if not connected:
-        await message.answer('Connect wallet first!')
-        return
-
-    transaction = {
-        'valid_until': int(time.time() + 3600),
-        'messages': [
-            get_comment_message(
-                destination_address='0:0000000000000000000000000000000000000000000000000000000000000000',
-                amount=int(0.01 * 10 ** 9),
-                comment='hello world!'
-            )
-        ]
-    }
-
-    await message.answer(text='Approve transaction in your wallet app!')
-    try:
-        await asyncio.wait_for(connector.send_transaction(
-            transaction=transaction
-        ), 300)
-    except asyncio.TimeoutError:
-        await message.answer(text='Timeout error!')
-    except pytonconnect.exceptions.UserRejectsError:
-        await message.answer(text='You rejected the transaction!')
-    except Exception as e:
-        await message.answer(text=f'Unknown error: {e}')
-
-
-async def connect_wallet(message: Message, wallet_name: str):
-    connector = get_connector(message.chat.id)
-
-    wallets_list = connector.get_wallets()
-    wallet = None
-
-    for w in wallets_list:
-        if w['name'] == wallet_name:
-            wallet = w
-
-    if wallet is None:
-        raise Exception(f'Unknown wallet: {wallet_name}')
-
-    generated_url = await connector.connect(wallet)
-
-    mk_b = InlineKeyboardBuilder()
-    mk_b.button(text='Connect', url=generated_url)
-
-    img = qrcode.make(generated_url)
-    stream = BytesIO()
-    img.save(stream)
-    file = BufferedInputFile(file=stream.getvalue(), filename='qrcode')
-
-    await message.answer_photo(photo=file, caption='Connect wallet within 3 minutes', reply_markup=mk_b.as_markup())
-
-    mk_b = InlineKeyboardBuilder()
-    mk_b.button(text='Start', callback_data='start')
-
-    for i in range(1, 180):
-        await asyncio.sleep(1)
-        if connector.connected:
-            if connector.account.address:
-                wallet_address = connector.account.address
-                wallet_address = Address(wallet_address).to_str(is_bounceable=False)
-                await message.answer(f'You are connected with address <code>{wallet_address}</code>', reply_markup=mk_b.as_markup())
-                logger.info(f'Connected with address: {wallet_address}')
-            return
-
-    await message.answer(f'Timeout error!', reply_markup=mk_b.as_markup())
-
-
-async def disconnect_wallet(message: Message):
-    connector = get_connector(message.chat.id)
-    await connector.restore_connection()
-    await connector.disconnect()
-    await message.answer('You have been successfully disconnected!')
 
 
 @dp.callback_query(lambda call: True)
